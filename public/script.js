@@ -4,7 +4,6 @@ const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
 // USGS API Endpoints
 const USGS_ELEVATION_API = 'https://epqs.nationalmap.gov/v1/json';
-const USGS_EARTHQUAKE_API = 'https://earthquake.usgs.gov/fdsnws/event/1/query';
 
 // Global state
 let liveAsteroidData = [];
@@ -36,6 +35,34 @@ const futurePredictions = [
     { name: '2000 SG344', size: '37 m', approach: 'September 16, 2071', distance: 'TBD', probability: '0.00017%', torino: 1, impact: 'Potential virtual impactor. Under monitoring.' }
 ];
 
+// Asteroid database for search
+const asteroidDatabase = {
+    'ceres': { name: '1 Ceres', diameter: 939000, composition: 'ice' },
+    '1': { name: '1 Ceres', diameter: 939000, composition: 'ice' },
+    'vesta': { name: '4 Vesta', diameter: 525000, composition: 'stone' },
+    '4': { name: '4 Vesta', diameter: 525000, composition: 'stone' },
+    'pallas': { name: '2 Pallas', diameter: 512000, composition: 'stone' },
+    '2': { name: '2 Pallas', diameter: 512000, composition: 'stone' },
+    'juno': { name: '3 Juno', diameter: 233000, composition: 'stone' },
+    '3': { name: '3 Juno', diameter: 233000, composition: 'stone' },
+    'eros': { name: '433 Eros', diameter: 16800, composition: 'stone' },
+    '433': { name: '433 Eros', diameter: 16800, composition: 'stone' },
+    'apophis': { name: '99942 Apophis', diameter: 340, composition: 'stone' },
+    '99942': { name: '99942 Apophis', diameter: 340, composition: 'stone' },
+    'bennu': { name: '101955 Bennu', diameter: 490, composition: 'stone' },
+    '101955': { name: '101955 Bennu', diameter: 490, composition: 'stone' },
+    'ryugu': { name: '162173 Ryugu', diameter: 900, composition: 'stone' },
+    '162173': { name: '162173 Ryugu', diameter: 900, composition: 'stone' },
+    'itokawa': { name: '25143 Itokawa', diameter: 330, composition: 'stone' },
+    '25143': { name: '25143 Itokawa', diameter: 330, composition: 'stone' },
+    'psyche': { name: '16 Psyche', diameter: 226000, composition: 'iron' },
+    '16': { name: '16 Psyche', diameter: 226000, composition: 'iron' },
+    'hygiea': { name: '10 Hygiea', diameter: 434000, composition: 'stone' },
+    '10': { name: '10 Hygiea', diameter: 434000, composition: 'stone' },
+    'barbara': { name: '234 Barbara', diameter: 44000, composition: 'stone' },
+    '234': { name: '234 Barbara', diameter: 44000, composition: 'stone' }
+};
+
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
@@ -44,8 +71,151 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPredictions();
     fetchLiveData();
     initSearch();
+    initAsteroidSearchDialog();
     setInterval(fetchLiveData, 600000);
 });
+
+// Initialize asteroid search dialog
+function initAsteroidSearchDialog() {
+    const searchBtn = document.getElementById('searchAsteroidBtn');
+    if (searchBtn) {
+        searchBtn.addEventListener('click', showAsteroidSearchDialog);
+    }
+    
+    const searchInput = document.getElementById('asteroidSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchAsteroidData();
+            }
+        });
+    }
+}
+
+function showAsteroidSearchDialog() {
+    const dialog = document.getElementById('asteroidSearchDialog');
+    const overlay = document.getElementById('asteroidSearchOverlay');
+    if (dialog && overlay) {
+        dialog.style.display = 'block';
+        overlay.style.display = 'block';
+        document.getElementById('asteroidSearchInput')?.focus();
+    }
+}
+
+function closeAsteroidSearchDialog() {
+    const dialog = document.getElementById('asteroidSearchDialog');
+    const overlay = document.getElementById('asteroidSearchOverlay');
+    if (dialog && overlay) {
+        dialog.style.display = 'none';
+        overlay.style.display = 'none';
+        document.getElementById('asteroidSearchStatus').textContent = '';
+    }
+}
+
+async function searchAsteroidData() {
+    const searchInput = document.getElementById('asteroidSearchInput').value.trim().toLowerCase();
+    const statusDiv = document.getElementById('asteroidSearchStatus');
+    
+    if (!searchInput) {
+        statusDiv.textContent = 'Please enter an asteroid name or number';
+        statusDiv.style.color = '#ef4444';
+        return;
+    }
+    
+    statusDiv.textContent = 'Searching NASA database...';
+    statusDiv.style.color = '#4ecdc4';
+    
+    // First try local database
+    if (asteroidDatabase[searchInput]) {
+        const data = asteroidDatabase[searchInput];
+        loadAsteroidToSimulator(data.name, data.diameter, data.composition);
+        statusDiv.textContent = 'Found! Loading asteroid data...';
+        statusDiv.style.color = '#10b981';
+        setTimeout(closeAsteroidSearchDialog, 1500);
+        return;
+    }
+    
+    // Try NASA API through proxy
+    try {
+        let response;
+        let data;
+        
+        try {
+            // Try local backend proxy first
+            response = await fetch(`http://localhost:3001/api/asteroid/${encodeURIComponent(searchInput)}`);
+            data = await response.json();
+            console.log('NASA Response:', data);
+        } catch (localError) {
+            // Fallback to public CORS proxy
+            console.log('Local proxy unavailable, trying public proxy...');
+            const publicProxyUrl = `${CORS_PROXY}${encodeURIComponent(`https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=${encodeURIComponent(searchInput)}`)}`;
+            response = await fetch(publicProxyUrl);
+            data = await response.json();
+        }
+        
+        // Check if multiple matches
+        if (data.code === 300 && data.list) {
+            statusDiv.innerHTML = `Multiple matches. Try:<br>${data.list.slice(0, 3).map(item => item.pdes).join(', ')}`;
+            statusDiv.style.color = '#f59e0b';
+            return;
+        }
+        
+        // Check if object found
+        if (data.object && data.orbit) {
+            const name = data.object.fullname || data.object.shortname || searchInput;
+            
+            // Extract diameter
+            let diameter = 100;
+            if (data.phys_par && data.phys_par.diameter) {
+                diameter = parseFloat(data.phys_par.diameter) * 1000;
+            }
+            
+            // Estimate composition
+            let composition = 'stone';
+            if (data.object.orbit_class) {
+                const orbitClass = data.object.orbit_class.name.toLowerCase();
+                if (orbitClass.includes('trojan')) {
+                    composition = 'ice';
+                }
+            }
+            
+            loadAsteroidToSimulator(name, diameter, composition);
+            
+            statusDiv.textContent = '✅ Found! Loading asteroid...';
+            statusDiv.style.color = '#10b981';
+            setTimeout(closeAsteroidSearchDialog, 1500);
+        } else {
+            throw new Error('Not found');
+        }
+    } catch (error) {
+        console.error('Search Error:', error);
+        statusDiv.innerHTML = `❌ "${searchInput}" not found.<br><br>💡 Try: Ceres, Vesta, Eros, Apophis, Bennu, Ryugu`;
+        statusDiv.style.color = '#ef4444';
+    }
+}
+
+function loadAsteroidToSimulator(name, diameter, composition) {
+    document.getElementById('diameter').value = diameter;
+    document.getElementById('composition').value = composition;
+    
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: rgba(78, 205, 196, 0.9);
+        color: #0a0e27;
+        padding: 1rem 1.5rem;
+        border-radius: 10px;
+        font-weight: 600;
+        z-index: 10000;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    `;
+    notification.textContent = `Loaded: ${name} (${diameter}m)`;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => notification.remove(), 3000);
+}
 
 // Initialize tooltips
 function initTooltips() {
@@ -75,7 +245,6 @@ function initTooltips() {
     `;
     document.head.appendChild(style);
     
-    // Add tooltips to existing elements
     document.querySelectorAll('[data-tooltip]').forEach(el => {
         el.classList.add('tooltip');
         el.setAttribute('data-tip', el.getAttribute('data-tooltip'));
@@ -138,44 +307,41 @@ function initHistoricalMap() {
         maxZoom: 19
     }).addTo(historicalMap);
     
-    // Calculate impact severity for sizing/coloring
     historicalImpacts.forEach(impact => {
-        // Determine impact severity based on diameter and energy
         let severity = 'low';
         let markerSize = 20;
-        let color = '#ff9800'; // orange
+        let color = '#ff9800';
         let opacity = 0.6;
         
         const diameter = parseFloat(impact.diameter);
         
         if (diameter >= 100 || impact.energy.includes('100 million')) {
-            severity = 'catastrophic'; // Mass extinction level
+            severity = 'catastrophic';
             markerSize = 50;
-            color = '#d32f2f'; // Dark red
+            color = '#d32f2f';
             opacity = 0.9;
         } else if (diameter >= 50 || impact.energy.includes('50 million')) {
-            severity = 'major'; // Continental scale
+            severity = 'major';
             markerSize = 40;
-            color = '#f44336'; // Red
+            color = '#f44336';
             opacity = 0.85;
         } else if (diameter >= 10 || impact.energy.includes('10-15 megatons') || impact.energy.includes('10 megatons')) {
-            severity = 'significant'; // Regional impact
+            severity = 'significant';
             markerSize = 30;
-            color = '#ff5722'; // Deep orange
+            color = '#ff5722';
             opacity = 0.75;
         } else if (diameter >= 1) {
-            severity = 'moderate'; // Local impact
+            severity = 'moderate';
             markerSize = 25;
-            color = '#ff9800'; // Orange
+            color = '#ff9800';
             opacity = 0.65;
         } else {
-            severity = 'minor'; // Airburst/small
+            severity = 'minor';
             markerSize = 18;
-            color = '#ffb74d'; // Light orange
+            color = '#ffb74d';
             opacity = 0.5;
         }
         
-        // Create custom marker with dynamic size and color
         const markerIcon = L.divIcon({
             className: 'impact-marker-custom',
             iconSize: [markerSize, markerSize],
@@ -213,7 +379,6 @@ function initHistoricalMap() {
         marker.bindPopup(popupContent, { maxWidth: 300 });
     });
     
-    // Add custom animation styles
     const style = document.createElement('style');
     style.textContent = `
         @keyframes pulse-catastrophic {
@@ -268,7 +433,6 @@ function initSimulatorMap() {
             latlng: e.latlng
         };
         
-        // Fetch USGS elevation data
         const elevation = await getUSGSElevation(e.latlng.lat, e.latlng.lng);
         clickedLocation.elevation = elevation;
         clickedLocation.isOcean = elevation < 0;
@@ -285,7 +449,6 @@ function initSimulatorMap() {
         
         impactMarker = L.marker(e.latlng, { icon: markerIcon }).addTo(simulatorMap);
         
-        const overlay = document.getElementById('explosionOverlay');
         const containerPoint = simulatorMap.latLngToContainerPoint(e.latlng);
         triggerExplosion(containerPoint.x, containerPoint.y);
     });
@@ -313,8 +476,11 @@ async function getUSGSElevation(lat, lng) {
 // Trigger explosion animation
 function triggerExplosion(x, y) {
     const overlay = document.getElementById('explosionOverlay');
+    if (!overlay) return;
+    
     overlay.innerHTML = '';
     
+    // Create explosion effects
     createExplosionElement(overlay, x, y, 'explosion-flash', 0);
     createExplosionElement(overlay, x, y, 'explosion-fireball', 100);
     createExplosionElement(overlay, x, y, 'explosion-core', 150);
@@ -325,6 +491,7 @@ function triggerExplosion(x, y) {
     
     createExplosionElement(overlay, x, y, 'explosion-shockwave', 300);
     
+    // Create particles
     for (let i = 0; i < 12; i++) {
         const angle = (i / 12) * Math.PI * 2;
         const distance = 50 + Math.random() * 100;
@@ -460,7 +627,7 @@ function displayAsteroids(asteroids) {
     });
 }
 
-// Run simulation with USGS data and mitigation
+// Run simulation
 async function runSimulation() {
     if (!clickedLocation) {
         alert('Please click on the map to select an impact location first!');
@@ -476,7 +643,6 @@ async function runSimulation() {
     const density = densities[composition];
     const targetDensity = clickedLocation.isOcean ? 1000 : 2700;
     
-    // Calculate impact
     const radius = diameter / 2;
     const volume = (4/3) * Math.PI * Math.pow(radius, 3);
     const mass = volume * density;
@@ -485,22 +651,18 @@ async function runSimulation() {
     const kineticEnergy = 0.5 * mass * Math.pow(velocityMs, 2);
     const energyMT = kineticEnergy / 4.184e15;
     
-    // Improved crater scaling
     const craterDiameter = 1.8 * Math.pow(energyMT, 0.3) * 
         Math.pow(density/targetDensity, 0.17) * 
         Math.pow(Math.sin(angle * Math.PI/180), 0.33);
     const craterDepth = craterDiameter / 5;
     
-    // Seismic effects
     const magnitude = 0.67 * Math.log10(energyMT * 1000) - 5.87;
     
-    // Other effects
     const devastationRadius = craterDiameter * 10;
     const fireballDiameter = diameter * 2.5;
     const thermalRadius = Math.pow(energyMT, 0.41) * 2.5;
     const shockwaveRange = devastationRadius * 3;
     
-    // Tsunami calculation for ocean impacts
     let tsunamiData = null;
     if (clickedLocation.isOcean) {
         const waterDepth = Math.abs(clickedLocation.elevation);
@@ -514,7 +676,6 @@ async function runSimulation() {
         };
     }
     
-    // Atmospheric effects
     const dustVolumeKm3 = craterDiameter * craterDepth;
     const stratosphericDust = dustVolumeKm3 * 0.3;
     const temperatureDrop = stratosphericDust > 1000 ? 10 : stratosphericDust > 100 ? 5 : 2;
@@ -526,15 +687,12 @@ async function runSimulation() {
         tsunamiData, temperatureDrop
     };
     
-    // Draw zones
     drawImpactZones(craterDiameter, devastationRadius, thermalRadius, shockwaveRange, tsunamiData);
     
-    // Display results
     displayResults(energyMT, craterDiameter, craterDepth, magnitude, devastationRadius, 
                    fireballDiameter, thermalRadius, shockwaveRange, dustVolumeKm3, 
                    tsunamiData, temperatureDrop);
     
-    // Show mitigation options
     showMitigationOptions();
     
     if (simulatorMap) {
@@ -611,33 +769,38 @@ function showMitigationOptions() {
     if (!mitigationDiv || !currentImpactData) return;
     
     const leadTimes = [1, 5, 10, 20];
-    let html = '<h3>Mitigation Strategies</h3><div class="mitigation-grid">';
+    let html = '<h3>Mitigation Strategies</h3><p style="color: #a0a0a0; margin-bottom: 1.5rem;">Compare different deflection methods at various lead times</p>';
     
     const methods = [
-        { name: 'Kinetic Impactor', efficiency: 0.8, cost: 500 },
-        { name: 'Gravity Tractor', efficiency: 0.6, cost: 2000 },
-        { name: 'Nuclear Deflection', efficiency: 0.95, cost: 5000 }
+        { name: 'Kinetic Impactor', efficiency: 0.8, cost: 500, desc: 'Spacecraft collision to alter trajectory' },
+        { name: 'Gravity Tractor', efficiency: 0.6, cost: 2000, desc: 'Long-duration gravitational pull' },
+        { name: 'Nuclear Deflection', efficiency: 0.95, cost: 5000, desc: 'Nuclear blast for large asteroids' }
     ];
     
     methods.forEach(method => {
+        html += `<div style="margin-bottom: 2rem;">
+            <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">${method.name}</h4>
+            <p style="color: #a0a0a0; font-size: 0.9rem; margin-bottom: 1rem;">${method.desc}</p>
+            <div class="mitigation-grid">`;
+        
         leadTimes.forEach(years => {
             const result = simulateDeflection(currentImpactData, method, years);
             const successClass = result.success ? 'success' : 'failure';
             
             html += `
                 <div class="mitigation-card ${successClass}">
-                    <h4>${method.name}</h4>
-                    <p><span>Lead Time:</span> ${years} years</p>
-                    <p><span>Delta-V Required:</span> ${result.deltaV.toFixed(3)} m/s</p>
-                    <p><span>Miss Distance:</span> ${result.missDistance.toLocaleString()} km</p>
-                    <p><span>Success:</span> ${result.success ? 'YES' : 'NO'}</p>
-                    <p><span>Estimated Cost:</span> $${result.cost}M</p>
+                    <h4>${years} Year${years > 1 ? 's' : ''} Lead Time</h4>
+                    <p><span>Delta-V Required:</span> ${result.deltaV.toFixed(4)} m/s</p>
+                    <p><span>Miss Distance:</span> ${(result.missDistance/1000).toFixed(0)}k km</p>
+                    <p><span>Success:</span> <strong style="color: ${result.success ? '#4caf50' : '#f44336'}">${result.success ? 'YES ✓' : 'NO ✗'}</strong></p>
+                    <p><span>Est. Cost:</span> ${result.cost}M</p>
                 </div>
             `;
         });
+        
+        html += '</div></div>';
     });
     
-    html += '</div>';
     mitigationDiv.innerHTML = html;
     mitigationDiv.style.display = 'block';
 }
@@ -645,12 +808,17 @@ function showMitigationOptions() {
 function simulateDeflection(impactData, method, leadTimeYears) {
     const asteroidMass = (4/3) * Math.PI * Math.pow(impactData.diameter/2, 3) * 3000;
     
+    // More lead time = more effective deflection
     const baseDeflection = method.efficiency * 0.01 / Math.sqrt(asteroidMass);
     const deltaV = baseDeflection * Math.sqrt(leadTimeYears);
     
+    // Calculate miss distance based on delta-V and time
     const missDistance = deltaV * leadTimeYears * 365 * 24 * 3600 * impactData.velocity;
     
-    const cost = method.cost * (1 + 1/leadTimeYears);
+    // Cost decreases with more lead time (inverse relationship)
+    // Short notice = urgent missions = much higher cost
+    const urgencyMultiplier = Math.pow(20 / leadTimeYears, 1.5);
+    const cost = method.cost * urgencyMultiplier;
     
     return {
         deltaV,
@@ -765,3 +933,260 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Add this after the initSearch() function in script.js
+
+// Live Asteroid Tracker Search
+function initLiveAsteroidSearch() {
+    const trackerSection = document.getElementById('tracker');
+    if (!trackerSection) return;
+    
+    // Add search box for specific asteroid
+    const searchContainer = document.querySelector('.tracker-controls');
+    if (searchContainer) {
+        const liveSearchBtn = document.createElement('button');
+        liveSearchBtn.className = 'refresh-btn';
+        liveSearchBtn.style.background = '#4ecdc4';
+        liveSearchBtn.innerHTML = '<span class="icon">🔍</span> Track Asteroid';
+        liveSearchBtn.onclick = showLiveAsteroidSearch;
+        searchContainer.appendChild(liveSearchBtn);
+    }
+}
+
+function showLiveAsteroidSearch() {
+    // Create dialog
+    const dialog = document.createElement('div');
+    dialog.id = 'liveAsteroidDialog';
+    dialog.style.cssText = 'display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000;';
+    
+    dialog.innerHTML = `
+        <div style="background: rgba(10, 14, 39, 0.98); padding: 2rem; width: 500px; max-width: 90vw; border-radius: 15px; border: 2px solid #4ecdc4; box-shadow: 0 10px 40px rgba(0,0,0,0.8);">
+            <h2 style="color: #4ecdc4; margin-top: 0;">Track Live Asteroid</h2>
+            <p style="color: #c0c0c0; font-size: 0.9rem; margin-bottom: 1rem;">Search for any asteroid to view its live tracking data</p>
+            <input type="text" id="liveAsteroidInput" placeholder="e.g., Apophis, 99942, Bennu, 433 Eros" 
+                style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(78, 205, 196, 0.4); 
+                background: rgba(15, 23, 42, 0.6); color: white; font-size: 1rem; margin-bottom: 1rem;">
+            <div id="liveAsteroidStatus" style="color: #4ecdc4; margin-bottom: 1rem; min-height: 20px; font-size: 0.9rem;"></div>
+            <div id="liveAsteroidResults" style="display: none; margin-bottom: 1rem; max-height: 300px; overflow-y: auto;"></div>
+            <div style="display: flex; gap: 1rem;">
+                <button onclick="searchLiveAsteroid()" style="flex: 1; padding: 0.75rem; background: #4ecdc4; color: #0a0e27; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">Search</button>
+                <button onclick="closeLiveAsteroidSearch()" style="flex: 1; padding: 0.75rem; background: rgba(255,255,255,0.1); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem;">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    const overlay = document.createElement('div');
+    overlay.id = 'liveAsteroidOverlay';
+    overlay.style.cssText = 'display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 9999;';
+    overlay.onclick = closeLiveAsteroidSearch;
+    
+    document.body.appendChild(overlay);
+    document.body.appendChild(dialog);
+    document.getElementById('liveAsteroidInput').focus();
+    
+    // Enter key handler
+    document.getElementById('liveAsteroidInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            searchLiveAsteroid();
+        }
+    });
+}
+
+function closeLiveAsteroidSearch() {
+    const dialog = document.getElementById('liveAsteroidDialog');
+    const overlay = document.getElementById('liveAsteroidOverlay');
+    if (dialog) dialog.remove();
+    if (overlay) overlay.remove();
+}
+
+async function searchLiveAsteroid() {
+    const searchInput = document.getElementById('liveAsteroidInput').value.trim();
+    const statusDiv = document.getElementById('liveAsteroidStatus');
+    const resultsDiv = document.getElementById('liveAsteroidResults');
+    
+    if (!searchInput) {
+        statusDiv.innerHTML = '<span style="color: #ef4444;">Please enter an asteroid name or number</span>';
+        resultsDiv.style.display = 'none';
+        return;
+    }
+    
+    statusDiv.innerHTML = '<span style="color: #4ecdc4;">Searching NASA database...</span>';
+    resultsDiv.style.display = 'none';
+    
+    try {
+        let response;
+        let data;
+        
+        // Try local backend first
+        try {
+            response = await fetch(`http://localhost:3001/api/asteroid/${encodeURIComponent(searchInput)}`);
+            data = await response.json();
+        } catch (localError) {
+            // Fallback to public proxy
+            const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+            const publicProxyUrl = `${CORS_PROXY}${encodeURIComponent(`https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=${encodeURIComponent(searchInput)}&full-prec=true`)}`;
+            response = await fetch(publicProxyUrl);
+            data = await response.json();
+        }
+        
+        // Check for multiple matches
+        if (data.code === 300 && data.list) {
+            statusDiv.innerHTML = '<span style="color: #f59e0b;">Multiple matches found. Select one:</span>';
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = data.list.slice(0, 10).map(item => `
+                <div style="padding: 0.75rem; margin: 0.5rem 0; background: rgba(78, 205, 196, 0.1); border-radius: 8px; cursor: pointer; border: 1px solid rgba(78, 205, 196, 0.3);" 
+                     onclick="searchLiveAsteroid('${item.pdes}')">
+                    <strong style="color: #4ecdc4;">${item.name || item.pdes}</strong>
+                    <br><small style="color: #a0a0a0;">Designation: ${item.pdes}</small>
+                </div>
+            `).join('');
+            return;
+        }
+        
+        // Check if object found
+        if (data.object && data.orbit) {
+            displayLiveAsteroidData(data);
+        } else {
+            throw new Error('Not found');
+        }
+    } catch (error) {
+        console.error('Live search error:', error);
+        statusDiv.innerHTML = `<span style="color: #ef4444;">Asteroid "${searchInput}" not found.</span><br><small style="color: #a0a0a0;">Try: Apophis, Bennu, Eros, Ceres, Vesta</small>`;
+        resultsDiv.style.display = 'none';
+    }
+}
+
+function displayLiveAsteroidData(data) {
+    const statusDiv = document.getElementById('liveAsteroidStatus');
+    const resultsDiv = document.getElementById('liveAsteroidResults');
+    
+    statusDiv.innerHTML = '<span style="color: #10b981;">Found! Displaying tracking data...</span>';
+    resultsDiv.style.display = 'block';
+    
+    // Extract data
+    const name = data.object.fullname || data.object.des;
+    const designation = data.object.des;
+    const orbitClass = data.object.orbit_class?.name || 'Unknown';
+    const isPHA = data.object.pha === 'Y';
+    
+    // Orbital elements
+    const semiMajorAxis = data.orbit?.elements?.find(e => e.name === 'a')?.value || 'N/A';
+    const eccentricity = data.orbit?.elements?.find(e => e.name === 'e')?.value || 'N/A';
+    const inclination = data.orbit?.elements?.find(e => e.name === 'i')?.value || 'N/A';
+    const perihelion = data.orbit?.elements?.find(e => e.name === 'q')?.value || 'N/A';
+    const aphelion = data.orbit?.elements?.find(e => e.name === 'Q')?.value || 'N/A';
+    const period = data.orbit?.elements?.find(e => e.name === 'per')?.value || 'N/A';
+    
+    // Physical parameters
+    const diameter = data.phys_par?.diameter ? `${(data.phys_par.diameter * 1000).toFixed(0)} m` : 'Unknown';
+    const magnitude = data.phys_par?.H || data.object.H || 'N/A';
+    const albedo = data.phys_par?.albedo || 'N/A';
+    
+    // Close approach data
+    const closeApproach = data.close_approach_data?.[0];
+    const nextApproach = closeApproach ? new Date(closeApproach.cd).toLocaleDateString() : 'N/A';
+    const approachDistance = closeApproach ? 
+        `${(closeApproach.dist * 149597870.7).toFixed(0)} km` : 'N/A';
+    const approachVelocity = closeApproach ? 
+        `${(closeApproach.v_rel).toFixed(2)} km/s` : 'N/A';
+    
+    resultsDiv.innerHTML = `
+        <div style="background: rgba(78, 205, 196, 0.05); border: 2px solid rgba(78, 205, 196, 0.3); border-radius: 10px; padding: 1.5rem;">
+            <h3 style="color: #4ecdc4; margin: 0 0 1rem 0; font-size: 1.3rem;">${name}</h3>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <strong style="color: #4ecdc4;">Designation:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${designation}</p>
+                </div>
+                <div>
+                    <strong style="color: #4ecdc4;">Orbit Class:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${orbitClass}</p>
+                </div>
+                <div>
+                    <strong style="color: #4ecdc4;">Hazardous:</strong>
+                    <p style="margin: 0.25rem 0;">
+                        <span style="background: ${isPHA ? '#f44336' : '#4caf50'}; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem; font-weight: bold;">
+                            ${isPHA ? 'YES' : 'NO'}
+                        </span>
+                    </p>
+                </div>
+            </div>
+            
+            <h4 style="color: #4ecdc4; margin: 1.5rem 0 0.75rem 0; border-top: 1px solid rgba(78, 205, 196, 0.3); padding-top: 1rem;">Physical Properties</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem;">
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Diameter:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${diameter}</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Abs. Magnitude:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${magnitude}</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Albedo:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${albedo}</p>
+                </div>
+            </div>
+            
+            <h4 style="color: #4ecdc4; margin: 1.5rem 0 0.75rem 0; border-top: 1px solid rgba(78, 205, 196, 0.3); padding-top: 1rem;">Orbital Elements</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem;">
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Semi-major Axis:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${semiMajorAxis} AU</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Eccentricity:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${eccentricity}</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Inclination:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${inclination}°</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Perihelion:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${perihelion} AU</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Aphelion:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${aphelion} AU</p>
+                </div>
+                <div>
+                    <strong style="color: #a0a0a0; font-size: 0.85rem;">Orbital Period:</strong>
+                    <p style="color: white; margin: 0.25rem 0;">${period} days</p>
+                </div>
+            </div>
+            
+            ${closeApproach ? `
+                <h4 style="color: #4ecdc4; margin: 1.5rem 0 0.75rem 0; border-top: 1px solid rgba(78, 205, 196, 0.3); padding-top: 1rem;">Next Close Approach</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem;">
+                    <div>
+                        <strong style="color: #a0a0a0; font-size: 0.85rem;">Date:</strong>
+                        <p style="color: white; margin: 0.25rem 0;">${nextApproach}</p>
+                    </div>
+                    <div>
+                        <strong style="color: #a0a0a0; font-size: 0.85rem;">Distance:</strong>
+                        <p style="color: white; margin: 0.25rem 0;">${approachDistance}</p>
+                    </div>
+                    <div>
+                        <strong style="color: #a0a0a0; font-size: 0.85rem;">Velocity:</strong>
+                        <p style="color: white; margin: 0.25rem 0;">${approachVelocity}</p>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <button onclick="closeLiveAsteroidSearch()" style="margin-top: 1.5rem; width: 100%; padding: 0.75rem; background: linear-gradient(45deg, #ff6b6b, #ee5a6f); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem;">
+                Close
+            </button>
+        </div>
+    `;
+}
+
+// Initialize live asteroid search on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initLiveAsteroidSearch();
+});
+
+// Make functions globally accessible
+window.showLiveAsteroidSearch = showLiveAsteroidSearch;
+window.closeLiveAsteroidSearch = closeLiveAsteroidSearch;
+window.searchLiveAsteroid = searchLiveAsteroid;
