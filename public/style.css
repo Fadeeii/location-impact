@@ -757,3 +757,77 @@ body {
         margin-top: 140px;
     }
 }
+
+/* Mitigation Options */
+.mitigation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.mitigation-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.mitigation-card.success {
+    border-color: #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+}
+
+.mitigation-card.failure {
+    border-color: #f44336;
+    background: rgba(244, 67, 54, 0.1);
+}
+
+.mitigation-card h4 {
+    color: var(--secondary);
+    margin: 0 0 1rem 0;
+    font-size: 1.2rem;
+}
+
+.mitigation-card p {
+    color: #c0c0c0;
+    margin: 0.5rem 0;
+    font-size: 0.95rem;
+}
+
+.mitigation-card span {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.mitigation-card.success p:nth-last-child(2) span {
+    color: #4caf50;
+}
+
+.mitigation-card.failure p:nth-last-child(2) span {
+    color: #f44336;
+}
+
+/* Enhanced tooltips in results */
+#resultsContent .tooltip {
+    border-bottom: 1px dotted var(--secondary);
+    cursor: help;
+}
+
+.whatif-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 2rem 0;
+    align-items: end;
+}
+
+.warning-box {
+    animation: warningPulse 2s infinite;
+}
+
+@keyframes warningPulse {
+    0%, 100% { border-color: #f44336; }
+    50% { border-color: #ff5722; }
+}

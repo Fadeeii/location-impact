@@ -2,6 +2,10 @@
 const NASA_API_KEY = 'DEMO_KEY';
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
+// USGS API Endpoints
+const USGS_ELEVATION_API = 'https://epqs.nationalmap.gov/v1/json';
+const USGS_EARTHQUAKE_API = 'https://earthquake.usgs.gov/fdsnws/event/1/query';
+
 // Global state
 let liveAsteroidData = [];
 let allAsteroidData = [];
@@ -10,6 +14,7 @@ let historicalMap = null;
 let simulatorMap = null;
 let impactMarker = null;
 let impactZones = [];
+let currentImpactData = null;
 
 // Historical impact data
 const historicalImpacts = [
@@ -34,12 +39,48 @@ const futurePredictions = [
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
+    initTooltips();
     loadHistoricalImpacts();
     loadPredictions();
     fetchLiveData();
     initSearch();
     setInterval(fetchLiveData, 600000);
 });
+
+// Initialize tooltips
+function initTooltips() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .tooltip { position: relative; cursor: help; border-bottom: 1px dotted var(--secondary); }
+        .tooltip::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 39, 0.95);
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            border: 1px solid var(--secondary);
+            z-index: 1000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .tooltip:hover::after { opacity: 1; }
+    `;
+    document.head.appendChild(style);
+    
+    // Add tooltips to existing elements
+    document.querySelectorAll('[data-tooltip]').forEach(el => {
+        el.classList.add('tooltip');
+        el.setAttribute('data-tip', el.getAttribute('data-tooltip'));
+    });
+}
 
 // Navigation
 function initNavigation() {
@@ -60,7 +101,6 @@ function initNavigation() {
                 }
             });
             
-            // Initialize maps when switching to map sections
             setTimeout(() => {
                 if (targetSection === 'historical') {
                     if (!historicalMap) {
@@ -80,7 +120,7 @@ function initNavigation() {
     });
 }
 
-// Initialize Historical Map with Leaflet
+// Initialize Historical Map
 function initHistoricalMap() {
     const mapElement = document.getElementById('historicalMap');
     if (!mapElement || historicalMap) return;
@@ -89,44 +129,119 @@ function initHistoricalMap() {
         center: [20, 0],
         zoom: 2,
         minZoom: 2,
-        maxZoom: 10,
-        zoomControl: true,
-        worldCopyJump: true
+        maxZoom: 10
     });
     
-    // Add dark tile layer
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
         subdomains: 'abcd',
         maxZoom: 19
     }).addTo(historicalMap);
     
-    // Add impact markers
+    // Calculate impact severity for sizing/coloring
     historicalImpacts.forEach(impact => {
+        // Determine impact severity based on diameter and energy
+        let severity = 'low';
+        let markerSize = 20;
+        let color = '#ff9800'; // orange
+        let opacity = 0.6;
+        
+        const diameter = parseFloat(impact.diameter);
+        
+        if (diameter >= 100 || impact.energy.includes('100 million')) {
+            severity = 'catastrophic'; // Mass extinction level
+            markerSize = 50;
+            color = '#d32f2f'; // Dark red
+            opacity = 0.9;
+        } else if (diameter >= 50 || impact.energy.includes('50 million')) {
+            severity = 'major'; // Continental scale
+            markerSize = 40;
+            color = '#f44336'; // Red
+            opacity = 0.85;
+        } else if (diameter >= 10 || impact.energy.includes('10-15 megatons') || impact.energy.includes('10 megatons')) {
+            severity = 'significant'; // Regional impact
+            markerSize = 30;
+            color = '#ff5722'; // Deep orange
+            opacity = 0.75;
+        } else if (diameter >= 1) {
+            severity = 'moderate'; // Local impact
+            markerSize = 25;
+            color = '#ff9800'; // Orange
+            opacity = 0.65;
+        } else {
+            severity = 'minor'; // Airburst/small
+            markerSize = 18;
+            color = '#ffb74d'; // Light orange
+            opacity = 0.5;
+        }
+        
+        // Create custom marker with dynamic size and color
         const markerIcon = L.divIcon({
-            className: 'impact-marker',
-            iconSize: [30, 30],
-            iconAnchor: [15, 15],
-            html: '<div style="width: 100%; height: 100%;"></div>'
+            className: 'impact-marker-custom',
+            iconSize: [markerSize, markerSize],
+            iconAnchor: [markerSize/2, markerSize/2],
+            html: `
+                <div style="
+                    width: 100%; 
+                    height: 100%;
+                    background: radial-gradient(circle, ${color} 0%, ${color}aa 50%, transparent 100%);
+                    border: 3px solid ${color};
+                    border-radius: 50%;
+                    box-shadow: 0 0 ${markerSize}px ${color}${Math.floor(opacity * 255).toString(16)}, 
+                                0 0 ${markerSize * 2}px ${color}${Math.floor(opacity * 0.4 * 255).toString(16)};
+                    animation: pulse-${severity} 2s infinite;
+                "></div>
+            `
         });
         
-        const marker = L.marker([impact.lat, impact.lng], { icon: markerIcon }).addTo(historicalMap);
+        const marker = L.marker([impact.lat, impact.lng], { 
+            icon: markerIcon,
+            zIndexOffset: diameter >= 100 ? 1000 : diameter >= 50 ? 500 : 0
+        }).addTo(historicalMap);
         
         const popupContent = `
             <h3>${impact.name}</h3>
+            <p><strong>Severity:</strong> <span style="color: ${color}; font-weight: bold;">${severity.toUpperCase()}</span></p>
             <p><strong>Location:</strong> ${impact.location}</p>
             <p><strong>Date:</strong> ${impact.year}</p>
             <p><strong>Crater:</strong> ${impact.diameter}</p>
-            <p><strong>Size:</strong> ${impact.size}</p>
+            <p><strong>Impactor Size:</strong> ${impact.size}</p>
             <p><strong>Energy:</strong> ${impact.energy}</p>
             <p style="margin-top: 10px; font-style: italic;">${impact.impact}</p>
         `;
         
-        marker.bindPopup(popupContent, {
-            maxWidth: 300,
-            className: 'impact-popup'
-        });
+        marker.bindPopup(popupContent, { maxWidth: 300 });
     });
+    
+    // Add custom animation styles
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes pulse-catastrophic {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+        }
+        @keyframes pulse-major {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.75; transform: scale(1.08); }
+        }
+        @keyframes pulse-significant {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
+        }
+        @keyframes pulse-moderate {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.03); }
+        }
+        @keyframes pulse-minor {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.9; transform: scale(1.02); }
+        }
+        .impact-marker-custom {
+            background: transparent !important;
+            border: none !important;
+        }
+    `;
+    document.head.appendChild(style);
 }
 
 // Initialize Simulator Map
@@ -138,83 +253,78 @@ function initSimulatorMap() {
         center: [20, 0],
         zoom: 2,
         minZoom: 2,
-        maxZoom: 12,
-        zoomControl: true,
-        worldCopyJump: true
+        maxZoom: 12
     });
     
-    // Add satellite imagery
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Tiles &copy; Esri',
         maxZoom: 19
     }).addTo(simulatorMap);
     
-    // Click handler for impact simulation
-    simulatorMap.on('click', function(e) {
+    simulatorMap.on('click', async function(e) {
         clickedLocation = {
             lat: e.latlng.lat.toFixed(2),
             lng: e.latlng.lng.toFixed(2),
             latlng: e.latlng
         };
         
-        // Remove previous marker and zones
-        if (impactMarker) {
-            simulatorMap.removeLayer(impactMarker);
-        }
+        // Fetch USGS elevation data
+        const elevation = await getUSGSElevation(e.latlng.lat, e.latlng.lng);
+        clickedLocation.elevation = elevation;
+        clickedLocation.isOcean = elevation < 0;
         
+        if (impactMarker) simulatorMap.removeLayer(impactMarker);
         impactZones.forEach(zone => simulatorMap.removeLayer(zone));
         impactZones = [];
         
-        // Add new marker
         const markerIcon = L.divIcon({
             className: 'impact-marker',
             iconSize: [40, 40],
-            iconAnchor: [20, 20],
-            html: '<div style="width: 100%; height: 100%;"></div>'
+            iconAnchor: [20, 20]
         });
         
         impactMarker = L.marker(e.latlng, { icon: markerIcon }).addTo(simulatorMap);
         
-        // Trigger explosion animation
         const overlay = document.getElementById('explosionOverlay');
-        const rect = overlay.getBoundingClientRect();
         const containerPoint = simulatorMap.latLngToContainerPoint(e.latlng);
-        
         triggerExplosion(containerPoint.x, containerPoint.y);
     });
     
-    // Initialize simulator controls
-    const simulateBtn = document.getElementById('simulateBtn');
-    if (simulateBtn) {
-        simulateBtn.addEventListener('click', runSimulation);
+    document.getElementById('simulateBtn')?.addEventListener('click', runSimulation);
+}
+
+// Get USGS Elevation
+async function getUSGSElevation(lat, lng) {
+    try {
+        const url = `${USGS_ELEVATION_API}?x=${lng}&y=${lat}&units=Meters&output=json`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.USGS_Elevation_Point_Query_Service?.Elevation_Query?.Elevation) {
+            return parseFloat(data.USGS_Elevation_Point_Query_Service.Elevation_Query.Elevation);
+        }
+        return 0;
+    } catch (error) {
+        console.error('USGS elevation fetch failed:', error);
+        return 0;
     }
 }
 
 // Trigger explosion animation
 function triggerExplosion(x, y) {
     const overlay = document.getElementById('explosionOverlay');
-    
-    // Clear previous explosions
     overlay.innerHTML = '';
     
-    // Create flash
     createExplosionElement(overlay, x, y, 'explosion-flash', 0);
-    
-    // Create fireball
     createExplosionElement(overlay, x, y, 'explosion-fireball', 100);
-    
-    // Create core explosion
     createExplosionElement(overlay, x, y, 'explosion-core', 150);
     
-    // Create multiple shockwave rings
     for (let i = 0; i < 3; i++) {
         createExplosionElement(overlay, x, y, 'explosion-ring', 200 + i * 300);
     }
     
-    // Create shockwave
     createExplosionElement(overlay, x, y, 'explosion-shockwave', 300);
     
-    // Create particles
     for (let i = 0; i < 12; i++) {
         const angle = (i / 12) * Math.PI * 2;
         const distance = 50 + Math.random() * 100;
@@ -227,19 +337,12 @@ function triggerExplosion(x, y) {
         particle.style.top = py + 'px';
         particle.style.width = (10 + Math.random() * 20) + 'px';
         particle.style.height = particle.style.width;
-        particle.style.background = `radial-gradient(circle, #ff9800, #ff5722, transparent)`;
+        particle.style.background = 'radial-gradient(circle, #ff9800, #ff5722, transparent)';
         overlay.appendChild(particle);
     }
     
-    // Create crater (appears after explosion)
-    setTimeout(() => {
-        createExplosionElement(overlay, x, y, 'crater-ring', 0);
-    }, 1500);
-    
-    // Clear all explosions after animation
-    setTimeout(() => {
-        overlay.innerHTML = '';
-    }, 4000);
+    setTimeout(() => createExplosionElement(overlay, x, y, 'crater-ring', 0), 1500);
+    setTimeout(() => overlay.innerHTML = '', 4000);
 }
 
 function createExplosionElement(container, x, y, className, delay) {
@@ -252,7 +355,7 @@ function createExplosionElement(container, x, y, className, delay) {
     }, delay);
 }
 
-// Load historical impacts list
+// Load historical impacts
 function loadHistoricalImpacts() {
     const container = document.getElementById('historicalList');
     if (!container) return;
@@ -307,7 +410,7 @@ function loadPredictions() {
     });
 }
 
-// Initialize search functionality
+// Initialize search
 function initSearch() {
     const searchInput = document.getElementById('searchInput');
     if (!searchInput) return;
@@ -318,21 +421,17 @@ function initSearch() {
     });
 }
 
-// Filter asteroids based on search term
+// Filter asteroids
 function filterAsteroids(searchTerm) {
-    const tableBody = document.getElementById('trackerTableBody');
-    if (!tableBody) return;
-    
     if (searchTerm === '') {
-        // Show all asteroids
         displayAsteroids(allAsteroidData);
     } else {
-        // Filter asteroids
         const filtered = allAsteroidData.filter(asteroid => 
             asteroid.name.toLowerCase().includes(searchTerm)
         );
         
-        if (filtered.length === 0) {
+        const tableBody = document.getElementById('trackerTableBody');
+        if (filtered.length === 0 && tableBody) {
             tableBody.innerHTML = '<tr><td colspan="6" class="loading">No asteroids found matching your search.</td></tr>';
         } else {
             displayAsteroids(filtered);
@@ -340,7 +439,7 @@ function filterAsteroids(searchTerm) {
     }
 }
 
-// Display asteroids in table
+// Display asteroids
 function displayAsteroids(asteroids) {
     const tableBody = document.getElementById('trackerTableBody');
     if (!tableBody) return;
@@ -355,18 +454,14 @@ function displayAsteroids(asteroids) {
             <td>${asteroid.date}</td>
             <td class="distance">${asteroid.distance.toLocaleString()}</td>
             <td>${asteroid.velocity.toLocaleString()}</td>
-            <td>
-                <span class="${asteroid.hazardous ? 'hazard-yes' : 'hazard-no'}">
-                    ${asteroid.hazardous ? 'YES' : 'NO'}
-                </span>
-            </td>
+            <td><span class="${asteroid.hazardous ? 'hazard-yes' : 'hazard-no'}">${asteroid.hazardous ? 'YES' : 'NO'}</span></td>
         `;
         tableBody.appendChild(row);
     });
 }
 
-// Run simulation
-function runSimulation() {
+// Run simulation with USGS data and mitigation
+async function runSimulation() {
     if (!clickedLocation) {
         alert('Please click on the map to select an impact location first!');
         return;
@@ -377,99 +472,192 @@ function runSimulation() {
     const angle = parseFloat(document.getElementById('angle').value);
     const composition = document.getElementById('composition').value;
     
-    // Density kg/m³
     const densities = { iron: 7800, stone: 3000, ice: 917 };
     const density = densities[composition];
+    const targetDensity = clickedLocation.isOcean ? 1000 : 2700;
     
-    // Calculate mass (kg)
+    // Calculate impact
     const radius = diameter / 2;
     const volume = (4/3) * Math.PI * Math.pow(radius, 3);
     const mass = volume * density;
     
-    // Kinetic energy
     const velocityMs = velocity * 1000;
     const kineticEnergy = 0.5 * mass * Math.pow(velocityMs, 2);
     const energyMT = kineticEnergy / 4.184e15;
     
-    // Impact calculations
-    const craterDiameter = Math.pow(energyMT, 0.3) * 1.8;
-    const magnitude = 0.67 * Math.log10(energyMT) + 5.87;
+    // Improved crater scaling
+    const craterDiameter = 1.8 * Math.pow(energyMT, 0.3) * 
+        Math.pow(density/targetDensity, 0.17) * 
+        Math.pow(Math.sin(angle * Math.PI/180), 0.33);
+    const craterDepth = craterDiameter / 5;
+    
+    // Seismic effects
+    const magnitude = 0.67 * Math.log10(energyMT * 1000) - 5.87;
+    
+    // Other effects
     const devastationRadius = craterDiameter * 10;
     const fireballDiameter = diameter * 2.5;
-    const shockwaveRange = devastationRadius * 3;
     const thermalRadius = Math.pow(energyMT, 0.41) * 2.5;
+    const shockwaveRange = devastationRadius * 3;
     
-    // Draw impact zones on map
-    if (impactMarker && simulatorMap) {
-        // Remove previous zones
-        impactZones.forEach(zone => simulatorMap.removeLayer(zone));
-        impactZones = [];
+    // Tsunami calculation for ocean impacts
+    let tsunamiData = null;
+    if (clickedLocation.isOcean) {
+        const waterDepth = Math.abs(clickedLocation.elevation);
+        const tsunamiHeight = Math.pow(energyMT, 0.25) * 10;
+        const tsunamiReach = tsunamiHeight * 100;
         
-        // Add impact zones
-        const craterZone = L.circle(clickedLocation.latlng, {
-            radius: craterDiameter * 500,
-            color: '#ff5722',
-            fillColor: '#ff5722',
-            fillOpacity: 0.7,
-            weight: 2
-        }).addTo(simulatorMap).bindPopup('Crater Zone');
-        impactZones.push(craterZone);
-        
-        const devastationZone = L.circle(clickedLocation.latlng, {
-            radius: devastationRadius * 1000,
-            color: '#ff9800',
-            fillColor: '#ff9800',
-            fillOpacity: 0.4,
-            weight: 2
-        }).addTo(simulatorMap).bindPopup('Devastation Zone');
-        impactZones.push(devastationZone);
-        
-        const thermalZone = L.circle(clickedLocation.latlng, {
-            radius: thermalRadius * 1000,
-            color: '#ffc107',
-            fillColor: '#ffc107',
-            fillOpacity: 0.2,
-            weight: 2
-        }).addTo(simulatorMap).bindPopup('Thermal Radiation Zone');
-        impactZones.push(thermalZone);
-        
-        const shockwaveZone = L.circle(clickedLocation.latlng, {
-            radius: shockwaveRange * 1000,
-            color: '#ffeb3b',
-            fillColor: '#ffeb3b',
-            fillOpacity: 0.1,
-            weight: 1
-        }).addTo(simulatorMap).bindPopup('Shockwave Zone');
-        impactZones.push(shockwaveZone);
+        tsunamiData = {
+            initialHeight: tsunamiHeight,
+            reachKm: tsunamiReach,
+            waterDepth: waterDepth
+        };
     }
+    
+    // Atmospheric effects
+    const dustVolumeKm3 = craterDiameter * craterDepth;
+    const stratosphericDust = dustVolumeKm3 * 0.3;
+    const temperatureDrop = stratosphericDust > 1000 ? 10 : stratosphericDust > 100 ? 5 : 2;
+    
+    currentImpactData = {
+        location: clickedLocation,
+        diameter, velocity, angle, composition,
+        energyMT, craterDiameter, magnitude,
+        tsunamiData, temperatureDrop
+    };
+    
+    // Draw zones
+    drawImpactZones(craterDiameter, devastationRadius, thermalRadius, shockwaveRange, tsunamiData);
     
     // Display results
-    const resultsPanel = document.getElementById('simulationResults');
-    const resultsContent = document.getElementById('resultsContent');
+    displayResults(energyMT, craterDiameter, craterDepth, magnitude, devastationRadius, 
+                   fireballDiameter, thermalRadius, shockwaveRange, dustVolumeKm3, 
+                   tsunamiData, temperatureDrop);
     
-    if (resultsContent) {
-        resultsContent.innerHTML = `
-            <p><span>Impact Location:</span> ${clickedLocation.lat}° N, ${clickedLocation.lng}° E</p>
-            <p><span>Energy Released:</span> ${energyMT.toFixed(2)} Megatons TNT</p>
-            <p><span>Crater Diameter:</span> ${craterDiameter.toFixed(2)} km</p>
-            <p><span>Crater Depth:</span> ${(craterDiameter / 5).toFixed(2)} km</p>
-            <p><span>Earthquake Magnitude:</span> ${magnitude.toFixed(1)} Richter</p>
-            <p><span>Devastation Radius:</span> ${devastationRadius.toFixed(1)} km</p>
-            <p><span>Fireball Diameter:</span> ${fireballDiameter.toFixed(0)} m</p>
-            <p><span>Thermal Radiation Range:</span> ${thermalRadius.toFixed(1)} km</p>
-            <p><span>Shockwave Range:</span> ${shockwaveRange.toFixed(1)} km</p>
-            <p><span>Ejecta Volume:</span> ${Math.pow(craterDiameter, 3).toFixed(0)} km³</p>
-        `;
-    }
+    // Show mitigation options
+    showMitigationOptions();
     
-    if (resultsPanel) {
-        resultsPanel.classList.add('visible');
-    }
-    
-    // Zoom to impact site
     if (simulatorMap) {
         simulatorMap.setView(clickedLocation.latlng, 7, { animate: true });
     }
+}
+
+function drawImpactZones(craterDiameter, devastationRadius, thermalRadius, shockwaveRange, tsunamiData) {
+    impactZones.forEach(zone => simulatorMap.removeLayer(zone));
+    impactZones = [];
+    
+    const zones = [
+        { radius: craterDiameter * 500, color: '#ff5722', label: 'Crater Zone', opacity: 0.7 },
+        { radius: devastationRadius * 1000, color: '#ff9800', label: 'Devastation Zone', opacity: 0.4 },
+        { radius: thermalRadius * 1000, color: '#ffc107', label: 'Thermal Radiation', opacity: 0.2 },
+        { radius: shockwaveRange * 1000, color: '#ffeb3b', label: 'Shockwave Zone', opacity: 0.1 }
+    ];
+    
+    if (tsunamiData) {
+        zones.push({ 
+            radius: tsunamiData.reachKm * 1000, 
+            color: '#2196f3', 
+            label: `Tsunami (${tsunamiData.initialHeight.toFixed(0)}m wave)`, 
+            opacity: 0.3 
+        });
+    }
+    
+    zones.forEach(zone => {
+        const circle = L.circle(clickedLocation.latlng, {
+            radius: zone.radius,
+            color: zone.color,
+            fillColor: zone.color,
+            fillOpacity: zone.opacity,
+            weight: 2
+        }).addTo(simulatorMap).bindPopup(zone.label);
+        impactZones.push(circle);
+    });
+}
+
+function displayResults(energyMT, craterDiameter, craterDepth, magnitude, devastationRadius, 
+                       fireballDiameter, thermalRadius, shockwaveRange, dustVolumeKm3, 
+                       tsunamiData, temperatureDrop) {
+    const resultsContent = document.getElementById('resultsContent');
+    
+    let html = `
+        <p><span>Impact Location:</span> ${clickedLocation.lat}° N, ${clickedLocation.lng}° E</p>
+        <p><span>Terrain:</span> ${clickedLocation.isOcean ? 'Ocean' : 'Land'} (${clickedLocation.elevation.toFixed(0)}m elevation)</p>
+        <p><span class="tooltip" data-tip="Total energy released on impact">Energy Released:</span> ${energyMT.toFixed(2)} Megatons TNT</p>
+        <p><span class="tooltip" data-tip="Diameter of the impact crater">Crater Diameter:</span> ${craterDiameter.toFixed(2)} km</p>
+        <p><span>Crater Depth:</span> ${craterDepth.toFixed(2)} km</p>
+        <p><span class="tooltip" data-tip="Earthquake magnitude on Richter scale">Earthquake Magnitude:</span> ${magnitude.toFixed(1)} Richter</p>
+        <p><span>Devastation Radius:</span> ${devastationRadius.toFixed(1)} km</p>
+        <p><span>Fireball Diameter:</span> ${fireballDiameter.toFixed(0)} m</p>
+        <p><span>Thermal Radiation:</span> ${thermalRadius.toFixed(1)} km</p>
+        <p><span>Shockwave Range:</span> ${shockwaveRange.toFixed(1)} km</p>
+        <p><span>Ejecta Volume:</span> ${dustVolumeKm3.toFixed(0)} km³</p>
+        <p><span class="tooltip" data-tip="Global temperature decrease from dust in atmosphere">Temperature Drop:</span> ${temperatureDrop}°C for ${temperatureDrop > 5 ? '2-5 years' : '6-12 months'}</p>
+    `;
+    
+    if (tsunamiData) {
+        html += `
+            <p style="color: #2196f3;"><span>Tsunami Warning:</span> ${tsunamiData.initialHeight.toFixed(0)}m initial wave</p>
+            <p style="color: #2196f3;"><span>Tsunami Reach:</span> ${tsunamiData.reachKm.toFixed(0)} km from coast</p>
+        `;
+    }
+    
+    resultsContent.innerHTML = html;
+    document.getElementById('simulationResults').classList.add('visible');
+    initTooltips();
+}
+
+function showMitigationOptions() {
+    const mitigationDiv = document.getElementById('mitigationOptions');
+    if (!mitigationDiv || !currentImpactData) return;
+    
+    const leadTimes = [1, 5, 10, 20];
+    let html = '<h3>Mitigation Strategies</h3><div class="mitigation-grid">';
+    
+    const methods = [
+        { name: 'Kinetic Impactor', efficiency: 0.8, cost: 500 },
+        { name: 'Gravity Tractor', efficiency: 0.6, cost: 2000 },
+        { name: 'Nuclear Deflection', efficiency: 0.95, cost: 5000 }
+    ];
+    
+    methods.forEach(method => {
+        leadTimes.forEach(years => {
+            const result = simulateDeflection(currentImpactData, method, years);
+            const successClass = result.success ? 'success' : 'failure';
+            
+            html += `
+                <div class="mitigation-card ${successClass}">
+                    <h4>${method.name}</h4>
+                    <p><span>Lead Time:</span> ${years} years</p>
+                    <p><span>Delta-V Required:</span> ${result.deltaV.toFixed(3)} m/s</p>
+                    <p><span>Miss Distance:</span> ${result.missDistance.toLocaleString()} km</p>
+                    <p><span>Success:</span> ${result.success ? 'YES' : 'NO'}</p>
+                    <p><span>Estimated Cost:</span> $${result.cost}M</p>
+                </div>
+            `;
+        });
+    });
+    
+    html += '</div>';
+    mitigationDiv.innerHTML = html;
+    mitigationDiv.style.display = 'block';
+}
+
+function simulateDeflection(impactData, method, leadTimeYears) {
+    const asteroidMass = (4/3) * Math.PI * Math.pow(impactData.diameter/2, 3) * 3000;
+    
+    const baseDeflection = method.efficiency * 0.01 / Math.sqrt(asteroidMass);
+    const deltaV = baseDeflection * Math.sqrt(leadTimeYears);
+    
+    const missDistance = deltaV * leadTimeYears * 365 * 24 * 3600 * impactData.velocity;
+    
+    const cost = method.cost * (1 + 1/leadTimeYears);
+    
+    return {
+        deltaV,
+        missDistance,
+        success: missDistance > 100000,
+        cost: cost.toFixed(0)
+    };
 }
 
 // Fetch live NASA data
@@ -503,13 +691,10 @@ async function fetchLiveData() {
             processNASAData(data);
             
             const elementCount = data.element_count || 0;
-            const neoCountEl = document.getElementById('neoCount');
-            const weekCountEl = document.getElementById('weekCount');
-            
-            if (neoCountEl) neoCountEl.textContent = '34,000+';
-            if (weekCountEl) weekCountEl.textContent = elementCount;
+            document.getElementById('neoCount').textContent = '34,000+';
+            document.getElementById('weekCount').textContent = elementCount;
         } else {
-            throw new Error('API request failed');
+            throw new Error('API failed');
         }
     } catch (error) {
         console.error('Error fetching NASA data:', error);
@@ -564,22 +749,19 @@ function loadFallbackData() {
     ];
     
     allAsteroidData = sampleData;
-    
-    const weekCountEl = document.getElementById('weekCount');
-    if (weekCountEl) weekCountEl.textContent = sampleData.length;
+    document.getElementById('weekCount').textContent = sampleData.length;
     
     const tableBody = document.getElementById('trackerTableBody');
-    if (!tableBody) return;
-    
-    tableBody.innerHTML = '<tr><td colspan="6" style="background: rgba(255,193,7,0.1); color: #ffc107; padding: 1rem; text-align: center;">⚠️ Using sample data - NASA API unavailable</td></tr>';
-    
-    displayAsteroids(sampleData);
+    if (tableBody) {
+        tableBody.innerHTML = '<tr><td colspan="6" style="background: rgba(255,193,7,0.1); color: #ffc107; padding: 1rem; text-align: center;">⚠️ Using sample data - NASA API unavailable</td></tr>';
+        displayAsteroids(sampleData);
+    }
 }
 
-// Refresh button handler
 document.addEventListener('DOMContentLoaded', () => {
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', fetchLiveData);
     }
 });
+
