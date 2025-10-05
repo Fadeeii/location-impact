@@ -133,8 +133,8 @@ async function searchWhatIfAsteroid() {
         let data;
         
         try {
-            // Try local backend proxy first
-            response = await fetch(`http://localhost:3001/api/asteroid/${encodeURIComponent(searchInput)}`);
+            // Try local backend proxy first (relative URL for compatibility)
+            response = await fetch(`/api/asteroid/${encodeURIComponent(searchInput)}`);
             data = await response.json();
             console.log('NASA Response:', data);
         } catch (localError) {
