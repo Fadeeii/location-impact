@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asteroid Impact Tracker - Real-time NEO Data</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="logo">
+            <span class="icon">☄️</span>
+            <span>Asteroid Impact Tracker</span>
+        </div>
+        <div class="nav-buttons">
+            <button class="nav-btn active" data-section="home">
+                <span class="icon">🏠</span> Home
+            </button>
+            <button class="nav-btn" data-section="historical">
+                <span class="icon">📍</span> Historical
+            </button>
+            <button class="nav-btn" data-section="predictions">
+                <span class="icon">🔮</span> Predictions
+            </button>
+            <button class="nav-btn" data-section="simulator">
+                <span class="icon">🎮</span> Simulator
+            </button>
+            <button class="nav-btn" data-section="tracker">
+                <span class="icon">🛰️</span> Live Tracker
+            </button>
+            <button class="nav-btn" data-section="risk">
+                <span class="icon">⚠️</span> Risk
+            </button>
+            <button class="nav-btn" data-section="whatif">
+                <span class="icon">🎯</span> What-If
+            </button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Home Section -->
+        <section id="home" class="section active">
+            <div class="hero">
+                <h1>Asteroid Impact Tracker</h1>
+                <p>Real-time tracking of near-Earth objects with <span class="tooltip" data-tip="United States Geological Survey - provides elevation and seismic data">USGS</span> environmental analysis, historical impact visualization, and interactive mitigation simulation powered by NASA data</p>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">190</div>
+                    <div class="stat-label">Confirmed Impact Craters</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="neoCount">Loading...</div>
+                    <div class="stat-label">Near-Earth Asteroids (Total)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="weekCount">Loading...</div>
+                    <div class="stat-label">Close Approaches (7 Days)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">0</div>
+                    <div class="stat-label">Current Threats (Torino 8+)</div>
+                </div>
+            </div>
+
+            <div class="info-panel" style="margin-top: 2rem;">
+                <h3>Features</h3>
+                <ul style="color: #c0c0c0; line-height: 2; list-style: none; padding-left: 0;">
+                    <li>✅ Real-time NASA NEO data integration</li>
+                    <li>✅ USGS elevation data for impact terrain analysis</li>
+                    <li>✅ Tsunami modeling for ocean impacts</li>
+                    <li>✅ Atmospheric effects calculation</li>
+                    <li>✅ Mitigation strategy simulation (kinetic impactor, gravity tractor, nuclear)</li>
+                    <li>✅ Historical impact site mapping</li>
+                    <li>✅ Interactive tooltips for technical terms</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Historical Impacts Section -->
+        <section id="historical" class="section">
+            <h2>📍 Historical Impact Events</h2>
+            <p class="section-subtitle">Major asteroid and meteor impact sites throughout Earth's history</p>
+
+            <div class="map-container">
+                <div id="historicalMap" class="leaflet-map"></div>
+            </div>
+
+            <div class="impact-list" id="historicalList"></div>
+        </section>
+
+        <!-- Future Predictions Section -->
+        <section id="predictions" class="section">
+            <h2>🔮 Future Impact Predictions</h2>
+            <p class="section-subtitle">Tracked near-Earth objects with potential future close approaches</p>
+
+            <div class="impact-list" id="predictionsList"></div>
+        </section>
+
+        <!-- What-If Scenario Section -->
+        <section id="whatif" class="section">
+            <h2>🎯 What-If Scenario Generator</h2>
+            <p class="section-subtitle">Simulate hypothetical impacts from real asteroids with altered trajectories</p>
+
+            <div class="whatif-controls">
+                <div class="control-group">
+                    <label>Select Asteroid</label>
+                    <select id="whatifAsteroid">
+                        <option value="bennu">101955 Bennu (490m)</option>
+                        <option value="apophis">99942 Apophis (340m)</option>
+                        <option value="vesta">4 Vesta (525km)</option>
+                        <option value="ceres">1 Ceres (939km)</option>
+                        <option value="eros">433 Eros (16.8km)</option>
+                        <option value="ryugu">162173 Ryugu (900m)</option>
+                        <option value="itokawa">25143 Itokawa (330m)</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label><span class="tooltip" data-tip="Impact velocity in km/s">Impact Velocity (km/s)</span></label>
+                    <input type="number" id="whatifVelocity" value="25" min="11" max="72">
+                </div>
+                <div class="control-group">
+                    <label>Impact Angle</label>
+                    <input type="number" id="whatifAngle" value="45" min="5" max="90">
+                </div>
+                <button class="simulate-btn" id="whatifGenerateBtn">Generate Scenario</button>
+            </div>
+
+            <div class="result-panel" id="whatifResults" style="display: none;">
+                <h3>Hypothetical Impact Scenario</h3>
+                <div id="whatifContent"></div>
+                <div class="warning-box" style="background: rgba(244, 67, 54, 0.1); border: 2px solid #f44336; padding: 1rem; margin-top: 1rem; border-radius: 10px;">
+                    <p style="color: #f44336; font-weight: bold;">⚠️ This is a hypothetical simulation only</p>
+                    <p style="color: #c0c0c0; font-size: 0.9rem;">The selected asteroid is in a stable orbit and poses no actual threat. This scenario demonstrates what would happen IF its trajectory were altered by an external force.</p>
+                </div>
+            </div>
+
+            <div id="whatifMap" class="map-container" style="display: none; margin-top: 2rem;">
+                <div id="whatifLeafletMap" class="leaflet-map"></div>
+            </div>
+        </section>
+
+        <!-- Simulator Section -->
+        <section id="simulator" class="section">
+            <h2>🎮 Impact Simulator</h2>
+            <p class="section-subtitle">Click anywhere on Earth to simulate an asteroid impact with <span class="tooltip" data-tip="Automatic terrain detection using USGS elevation data">USGS terrain analysis</span></p>
+
+            <div class="simulator-controls">
+                <div class="control-group">
+                    <label><span class="tooltip" data-tip="Asteroid diameter in meters">Diameter (m)</span></label>
+                    <input type="number" id="diameter" value="100" min="1" max="10000">
+                </div>
+                <div class="control-group">
+                    <label><span class="tooltip" data-tip="Impact velocity in kilometers per second">Velocity (km/s)</span></label>
+                    <input type="number" id="velocity" value="20" min="1" max="70">
+                </div>
+                <div class="control-group">
+                    <label><span class="tooltip" data-tip="Impact angle relative to surface (90° = vertical)">Angle (degrees)</span></label>
+                    <input type="number" id="angle" value="45" min="1" max="90">
+                </div>
+                <div class="control-group">
+                    <label>Composition</label>
+                    <select id="composition">
+                        <option value="stone">Stone (3000 kg/m³)</option>
+                        <option value="iron">Iron (7800 kg/m³)</option>
+                        <option value="ice">Ice (917 kg/m³)</option>
+                    </select>
+                </div>
+                <button class="simulate-btn" id="simulateBtn">Simulate Impact</button>
+            </div>
+
+            <div class="map-container">
+                <div id="simulatorMap" class="leaflet-map"></div>
+                <div id="explosionOverlay" class="explosion-overlay"></div>
+            </div>
+
+            <div class="result-panel" id="simulationResults">
+                <h3>Impact Results</h3>
+                <div id="resultsContent"></div>
+            </div>
+
+            <div class="result-panel" id="mitigationOptions" style="display: none;"></div>
+        </section>
+
+        <!-- Live Tracker Section -->
+        <section id="tracker" class="section">
+            <div class="section-header">
+                <div>
+                    <h2><span class="live-indicator"></span>Live Asteroid Tracker</h2>
+                    <p class="section-subtitle">Real-time close approaches from <span class="tooltip" data-tip="NASA's Near-Earth Object Web Service API">NASA NeoWs API</span></p>
+                </div>
+                <div class="tracker-controls">
+                    <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by name...">
+                    <button class="refresh-btn" id="refreshBtn">
+                        <span class="icon">🔄</span> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="tracker-table">
+                    <thead>
+                        <tr>
+                            <th>Asteroid Name</th>
+                            <th><span class="tooltip" data-tip="Estimated maximum diameter">Size (m)</span></th>
+                            <th>Approach Date</th>
+                            <th><span class="tooltip" data-tip="Distance from Earth at closest approach">Distance (km)</span></th>
+                            <th><span class="tooltip" data-tip="Relative velocity to Earth">Velocity (km/h)</span></th>
+                            <th><span class="tooltip" data-tip="Potentially Hazardous Asteroid classification">Hazardous</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="trackerTableBody">
+                        <tr>
+                            <td colspan="6" class="loading">Loading real-time data from NASA...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Risk Assessment Section -->
+        <section id="risk" class="section">
+            <h2>⚠️ <span class="tooltip" data-tip="International scale for categorizing asteroid impact threat">Torino Impact Hazard Scale</span></h2>
+            <p class="section-subtitle">International scale for categorizing asteroid impact hazards</p>
+
+            <div class="torino-scale">
+                <div class="torino-level level-0">
+                    <h3>Level 0</h3>
+                    <h4>No Hazard (White)</h4>
+                    <p>Likelihood of collision is zero, or well below the chance that a random object will strike Earth</p>
+                </div>
+                <div class="torino-level level-1-4">
+                    <h3>Level 1-4</h3>
+                    <h4>Normal (Green)</h4>
+                    <p>Routine discovery with pass near Earth. Actual collision extremely unlikely. Current surveys should discover many such objects.</p>
+                </div>
+                <div class="torino-level level-5-7">
+                    <h3>Level 5-7</h3>
+                    <h4>Threatening (Yellow/Orange)</h4>
+                    <p>Close encounter with significant threat of regional to global catastrophe. Attention by astronomers required to provide precise forecast.</p>
+                </div>
+                <div class="torino-level level-8-10">
+                    <h3>Level 8-10</h3>
+                    <h4>Certain Collision (Red)</h4>
+                    <p>Collision is certain, capable of causing localized destruction (8), regional devastation (9), or global climate catastrophe (10).</p>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h3>Current Global Status</h3>
+                <p class="status-good">✅ No asteroids are currently rated above Torino Scale 0</p>
+                <p class="status-info">All known potentially hazardous asteroids are being continuously monitored by NASA's Center for Near-Earth Object Studies (CNEOS).</p>
+            </div>
+        </section>
+    </div>
+
+    <footer class="footer">
+        <p>Data powered by NASA NeoWs API & USGS Elevation Services | Updated in real-time</p>
+        <p>Asteroid Impact Tracker © 2025</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+    <script src="whatif.js"></script>
+</body>
+</html>
