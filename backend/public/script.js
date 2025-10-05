@@ -836,7 +836,7 @@ async function searchLiveAsteroid(prefilledSearch) {
         let data;
         
         try {
-            response = await fetch(`http://localhost:3001/api/asteroid/${encodeURIComponent(searchInput)}`);
+            response = await fetch(`/api/asteroid/${encodeURIComponent(searchInput)}`);
             data = await response.json();
         } catch (localError) {
             const publicProxyUrl = `${CORS_PROXY}${encodeURIComponent(`https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=${encodeURIComponent(searchInput)}&full-prec=true`)}`;
