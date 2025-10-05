@@ -1,5 +1,5 @@
 // Configuration
-const NASA_API_KEY = 'DEMO_KEY';
+const NASA_API_KEY = 'OggjT7sOVVVyZcctMKSg90OoeRD0SJrlGJ3MAHFM';
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
 // USGS API Endpoints
@@ -995,3 +995,4 @@ function displayLiveAsteroidData(data) {
 window.showLiveAsteroidSearch = showLiveAsteroidSearch;
 window.closeLiveAsteroidSearch = closeLiveAsteroidSearch;
 window.searchLiveAsteroid = searchLiveAsteroid;
+
