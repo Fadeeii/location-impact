@@ -1,9 +1,17 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
-app.use(cors());
+const PORT = process.env.PORT || 3001;
 
+app.use(cors());
+app.use(express.json());
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// API endpoint for asteroid data
 app.get('/api/asteroid/:identifier', async (req, res) => {
   try {
     const identifier = req.params.identifier;
@@ -19,8 +27,18 @@ app.get('/api/asteroid/:identifier', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'Serverless function running on Vercel' });
+  res.json({ status: 'Server running' });
 });
 
-// do NOT call app.listen() — export the app
+// Serve index.html for all other routes (SPA fallback)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`API available at http://localhost:${PORT}/api/asteroid/:identifier`);
+});
+
 module.exports = app;
